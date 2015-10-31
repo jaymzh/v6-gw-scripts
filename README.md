@@ -1,6 +1,6 @@
 # v6-gw-scripts
 
-These are scripts to helpe people setup a v6 gateway on ISPs who hand out a v6 block. They have only been tested with Comcast. See https://www.phildev.net/phil/blog/?p=308 for all the gorey details.
+These are scripts to helpe people setup a v6 gateway on ISPs who hand out a v6 block. They have only been tested with Comcast. See https://www.phildev.net/phil/blog/?p=308 for all the gory details.
 
 ## Setup
 
