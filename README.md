@@ -10,12 +10,12 @@ net.ipv6.conf.$YOUR_EXTERNAL_INTERFACE.accept_ra=2
 net.ipv6.conf.$YOUR_EXTERNAL_INTERFACE.forwarding=0
 ```
 
-replacing `$YOUR_EXTERNAL_INTERFACE` with your external interface.
+Replacing `$YOUR_EXTERNAL_INTERFACE` with your external interface.
 
 * Install radvd on your gateway and create `/etc/radvd.conf.tmpl` (which these scripst will use to create radvd.conf) that looks like this:
 
 ```
-interface $YOUR_INTERNAL_INTERFACE` with your internal interface.
+interface $YOUR_INTERNAL_INTERFACE
 {
    AdvSendAdvert on;
    RDNSS 2001:4860:4860::8888 2001:4860:4860::8844 {};
@@ -26,6 +26,8 @@ interface $YOUR_INTERNAL_INTERFACE` with your internal interface.
    };
 };   
 ```
+
+Again, replacing `$YOUR_EXTERNAL_INTERFACE` with your external interface.
 
 The scripts will update `__PREFIX__` for you.
 
