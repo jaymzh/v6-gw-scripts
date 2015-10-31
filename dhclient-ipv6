@@ -1,0 +1,99 @@
+#!/bin/bash
+
+# vim:tw=80:tabstop=2:shiftwidth=2
+
+# Copyright (c) 2012-present, Phil Dibowitz <phil@ipom.com>
+#
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#  * Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#  * Redistributions in
+#    binary form must reproduce the above copyright notice, this list of
+#    conditions and the following disclaimer in the documentation and/or other
+#    materials provided with the distribution.
+#  * Neither the name of the author nor the names of its contributors may be
+#    used to endorse or promote products derived from this software without
+#    specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+#
+# You can find the latest version of this at:
+#   https://github.com/jaymzh/v6-gw-scripts
+#
+# Will, given a 'dhclient -6 -P ...' on $EXT_IFACE and assign the prefix
+# given to the $INT_IFACE, and twiddle radvd.
+#
+# For radvd, it takes /etc/radvd.conf.tmpl, replaces "__PREFIX__" with your
+# prefix, and - if it's different from /etc/radvd.conf - replaces the config
+# file and restarts the daemon.
+#
+
+# Change INT_IFACE or EXT_IFACE by setting them in the config file
+CONF='/etc/ipv6_prefix_dhclient.conf'
+INT_IFACE='eth0'
+EXT_IFACE='eth1'
+
+[ -r $CONF ] && . $CONF
+
+ipv6_prefix_setup() {
+  current_ip=$(/sbin/ip -6 addr show dev $INT_IFACE scope global |\
+               /usr/bin/awk '/inet6/ {print $2}')
+  current_prefix=$(echo $current_ip | /bin/sed -e 's@::1/64@::/64@')
+  if [ "$current_prefix" == "$new_ip6_prefix" ] ; then
+    return
+  fi
+
+  # Setup the new IP
+  new_ip=$(echo $new_ip6_prefix | /bin/sed -e 's@::/64@::1/64@g')
+  if [ ! -z "$current_ip" ] ; then
+    ip -6 addr del $current_ip dev $INT_IFACE
+  fi
+  ip -6 addr add $new_ip dev $INT_IFACE
+
+  # Ensure we'll get router advertisements
+  sysctl -w "net.ipv6.conf.$EXT_IFACE.accept_ra=2"
+  # Needed for kernels before 2.6.37, don't worry,
+  # forwarding will still work as long as you have it set
+  # on your other interface.
+  sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
+
+  # Update radvd
+  tmpfile=/tmp/radvd.conf.$$
+  sed -e "s@__PREFIX__@$new_ip6_prefix@g" /etc/radvd.conf.tmpl > $tmpfile
+  diff $tmpfile /etc/radvd.conf >/dev/null
+  if [ $? == 1 ]; then
+    mv $tmpfile /etc/radvd.conf
+    /etc/init.d/radvd restart
+  else
+    rm $tmpfile
+  fi
+}
+
+if [ "$interface" != "$EXT_IFACE" ] ; then
+  return
+fi
+
+case "$reason" in
+  BOUND6|REBIND6)
+    # We will get called twice here - once for the temp address
+    # and once for the prefix. We only care about the prefix.
+    if [ ! -z "$new_ip6_prefix" ] ; then
+      ipv6_prefix_setup
+    fi
+    ;;
+esac
