@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # vim:tw=80:tabstop=2:shiftwidth=2
 
@@ -54,7 +54,9 @@ ipv6_prefix_setup() {
   current_ip=$(/sbin/ip -6 addr show dev $INT_IFACE scope global |\
                /usr/bin/awk '/inet6/ {print $2}')
   current_prefix=$(echo $current_ip | /bin/sed -e 's@::1/64@::/64@')
-  if [ "$current_prefix" == "$new_ip6_prefix" ] ; then
+  if [ -n "$current_prefix" -a "$current_prefix" = "$new_ip6_prefix" ] ; then
+    # Make sure radvd is running
+    service radvd start
     return
   fi
 
@@ -73,15 +75,18 @@ ipv6_prefix_setup() {
   sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
 
   # Update radvd
-  tmpfile=/tmp/radvd.conf.$$
+  tmpfile="/tmp/radvd.conf.$$"
   sed -e "s@__PREFIX__@$new_ip6_prefix@g" \
       -e "s@__IFACE__@$INT_IFACE@g" /etc/radvd.conf.tmpl > $tmpfile
-  diff $tmpfile /etc/radvd.conf &>/dev/null
+  diff $tmpfile /etc/radvd.conf >/dev/null 2>/dev/null
   if [ $? -ne 0 ]; then
+    # Update config and restart radvd
     mv $tmpfile /etc/radvd.conf
-    /etc/init.d/radvd restart
+    service radvd restart
   else
     rm $tmpfile
+    # ensure it's running anyway
+    service radvd start
   fi
 }
 

@@ -15,7 +15,7 @@ Replacing `$YOUR_EXTERNAL_INTERFACE` with your external interface.
 * Install radvd on your gateway and create `/etc/radvd.conf.tmpl` (which these scripst will use to create radvd.conf) that looks like this:
 
 ```
-interface $YOUR_INTERNAL_INTERFACE
+interface __IFACE__
 {
    AdvSendAdvert on;
    RDNSS 2001:4860:4860::8888 2001:4860:4860::8844 {};
@@ -27,13 +27,11 @@ interface $YOUR_INTERNAL_INTERFACE
 };   
 ```
 
-Again, replacing `$YOUR_EXTERNAL_INTERFACE` with your external interface.
+The scripts will update `__PREFIX__` and `__IFACE__` for you.
 
-The scripts will update `__PREFIX__` for you.
+* Drop `dhclient-ipv6` into `/etc/dhcp/dhclient-exit-hooks.d/`
 
-* Drop `dhclient-ipv6` into `/etc/dhcp/dhclient-exit-hooks.d`
-
-* Drop `99-ipv6` into `/etc/network/if-up.d` (or your distribution's equivalent)
+* Drop `99-ipv6` into `/etc/network/if-up.d/` (or your distribution's equivalent)
 
 * Drop `ipv6_prefix_dhclient.conf` in `/etc` and update it to accurately represent your setup.
 
