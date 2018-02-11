@@ -39,8 +39,8 @@
 # given to the $INT_IFACE, and twiddle radvd.
 #
 # For radvd, it takes /etc/radvd.conf.tmpl, replaces "__PREFIX__" with your
-# prefix, and - if it's different from /etc/radvd.conf - replaces the config
-# file and restarts the daemon.
+# prefix, and "__IFACE__" with your internal interface, and - if it's different
+# from /etc/radvd.conf - replaces the config file and restarts the daemon.
 #
 
 # Change INT_IFACE or EXT_IFACE by setting them in the config file
@@ -74,9 +74,10 @@ ipv6_prefix_setup() {
 
   # Update radvd
   tmpfile=/tmp/radvd.conf.$$
-  sed -e "s@__PREFIX__@$new_ip6_prefix@g" /etc/radvd.conf.tmpl > $tmpfile
-  diff $tmpfile /etc/radvd.conf >/dev/null
-  if [ $? == 1 ]; then
+  sed -e "s@__PREFIX__@$new_ip6_prefix@g" \
+      -e "s@__IFACE__@$INT_IFACE@g" /etc/radvd.conf.tmpl > $tmpfile
+  diff $tmpfile /etc/radvd.conf &>/dev/null
+  if [ $? -ne 0 ]; then
     mv $tmpfile /etc/radvd.conf
     /etc/init.d/radvd restart
   else

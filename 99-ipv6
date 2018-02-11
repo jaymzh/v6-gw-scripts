@@ -40,26 +40,37 @@
 
 # Change EXT_IFACE by updating the config file
 CONF='/etc/ipv6_prefix_dhclient.conf'
-EXT_IFACE="eth1"
+EXT_IFACE='eth0'
+PIDFILE="/var/run/dhclient6.$IFACE.pid"
+LEASEFILE="/var/lib/dhcp/dhclient6.$IFACE.leases"
 
 [ -r $CONF ] && . $CONF
 
 # We only care about the external interface.
 if [ "$IFACE" != "$EXT_IFACE" ]; then
-	exit 0
+    logger -t 99-ipv6 "Called with $IFACE, skipping"
+    exit 0
 fi
 
 # Only run from ifup.
 if [ "$MODE" != start ]; then
-	exit 0
+    logger -t 99-ipv6 "Called with mode $MODE, skipping"
+    exit 0
 fi
 
+logger -t 99-ipv6 "Configuring $IFACE for v6..."
+
 # If there's a stale dhclient, kill it
-kill `cat /var/run/dhclient6.$IFACE.pid`
+if [ -s "$PIDFILE" ]; then
+    kill $(cat $PIDFILE) &>/dev/null
+fi
 
 # Start our new one
-dhclient -6 -P -pf /var/run/dhclient6.$IFACE.pid \
-  -lf /var/lib/dhcp/dhclient6.$IFACE.leases $IFACE &
+cmd="/sbin/dhclient -6 -P -pf $PIDFILE -lf $LEASEFILE -v $IFACE"
+
+# We have to start it in a sub-shell later, it dies if we start it
+# directly from here for some reason.
+( ( sleep 5; $cmd ) & ) &
 
 # reload firewall rules
 /etc/network/ip6tables reload
