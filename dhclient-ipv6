@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# vim:tw=80:tabstop=2:shiftwidth=2
+# vim:tw=80:tabstop=2:shiftwidth=2:expandtab
 
 # Copyright (c) 2012-present, Phil Dibowitz <phil@ipom.com>
 #
@@ -45,39 +45,104 @@
 
 # Change INT_IFACE or EXT_IFACE by setting them in the config file
 CONF='/etc/ipv6_prefix_dhclient.conf'
-INT_IFACE='eth0'
-EXT_IFACE='eth1'
+EXT_IFACE='eth0'
+INT_IFACE='eth1'
+OTHER_IFACES=''
+RADVD_TEMPLATE='/etc/radvd.conf.tmpl'
 
 [ -r $CONF ] && . $CONF
 
-ipv6_prefix_setup() {
-  current_ip=$(/sbin/ip -6 addr show dev $INT_IFACE scope global |\
-               /usr/bin/awk '/inet6/ {print $2}')
-  current_prefix=$(echo $current_ip | /bin/sed -e 's@::1/64@::/64@')
-  if [ -n "$current_prefix" -a "$current_prefix" = "$new_ip6_prefix" ] ; then
-    # Make sure radvd is running
-    service radvd start
+STATE_DIR=/var/lib/dhcp/dhclient-ipv6-mapping
+
+set_iaid_mapping() {
+  local iaid="$1"
+  local iface="$2"
+
+  echo $iface > "$STATE_DIR/iaid_$iaid"
+}
+
+get_interface() {
+  local iaid=$1
+  if [ ! -d $STATE_DIR ]; then
+    mkdir -p $STATE_DIR
+    set_iaid_mapping "$iaid" "$INT_IFACE"
+    echo $INT_IFACE
     return
   fi
 
-  # Setup the new IP
-  new_ip=$(echo $new_ip6_prefix | /bin/sed -e 's@::/64@::1/64@g')
-  if [ ! -z "$current_ip" ] ; then
-    ip -6 addr del $current_ip dev $INT_IFACE
+  ls $STATE_DIR/iaid_* >/dev/null 2>/dev/null
+  if [ $? -eq 2 ]; then
+    echo $INT_IFACE
+    set_iaid_mapping "$iaid" "$INT_IFACE"
   fi
-  ip -6 addr add $new_ip dev $INT_IFACE
 
-  # Ensure we'll get router advertisements
-  sysctl -w "net.ipv6.conf.$EXT_IFACE.accept_ra=2"
-  # Needed for kernels before 2.6.37, don't worry,
-  # forwarding will still work as long as you have it set
-  # on your other interface.
-  sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
 
-  # Update radvd
+  # if we've mapped this iaid to an interface, just cat it out
+  if [ -e "$STATE_DIR/iaid_$iaid" ]; then
+    iface=`cat "$STATE_DIR/iaid_$iaid"`
+    # we're not changing the mapping, but we call update anyway mostly
+    # as a `touch` for the code below that checks the time
+    echo $iface
+    set_iaid_mapping "$iaid" "$iface"
+    return
+  fi
+
+  # we haven't - so let's see if we have an interfaces not-yet-mapped
+  known=""
+  for file in $STATE_DIR/iaid_*; do
+    known="$known `cat $file`"
+  done
+  for iface in $INT_IFACE $OTHER_IFACES; do
+    for kface in $known; do
+      if [ "$kface" = "$iface" ]; then
+        continue 2
+      fi
+    done
+    # This interface is not yet mapped, return it
+    echo $iface
+    set_iaid_mapping "$iaid" "$iface"
+    return
+  done
+
+  # OK, all of our interfaces are mapped, but none of them is this one, so we'll
+  # just return the least-recently touched file. This is a bit odd, because
+  # we'll end up populating them in the reverse order, but we won't just end up
+  # re-doing one we just did
+  last=`ls -t $STATE_DIR/iaid_* | tail -n 1`
+  iface=`cat "$last"`
+  rm -f "$last"
+  echo $iface
+  set_iaid_mapping "$iaid" "$iface"
+}
+
+get_prefix() {
+  local iface="$1"
+  current_ip=`/sbin/ip -6 addr show dev $iface scope global |\
+               /usr/bin/awk '/inet6/ {print $2}'`
+  echo $current_ip | /bin/sed -e 's@::1/64@::/64@'
+}
+
+update_radvd() {
+  local iface="$1"
+  local prefix="$2"
+
   tmpfile="/tmp/radvd.conf.$$"
-  sed -e "s@__PREFIX__@$new_ip6_prefix@g" \
-      -e "s@__IFACE__@$INT_IFACE@g" /etc/radvd.conf.tmpl > $tmpfile
+  rm -f "$tmpfile"
+  for tface in $INT_IFACE $OTHER_IFACES; do
+    if [ "$iface" = "$tface" ]; then
+      sed -e "s@__PREFIX__@$prefix@g" \
+          -e "s@__IFACE__@$iface@g" $RADVD_TEMPLATE \
+          >> $tmpfile
+    else
+      tprefix=`get_prefix $tface`
+      if [ -z "$tprefix" ]; then
+        continue
+      fi
+      sed -e "s@__PREFIX__@$tprefix@g" \
+          -e "s@__IFACE__@$tface@g" $RADVD_TEMPLATE \
+          >> $tmpfile
+    fi
+  done
   diff $tmpfile /etc/radvd.conf >/dev/null 2>/dev/null
   if [ $? -ne 0 ]; then
     # Update config and restart radvd
@@ -90,6 +155,31 @@ ipv6_prefix_setup() {
   fi
 }
 
+ipv6_prefix_setup() {
+  local iface=`get_interface "$new_iaid"`
+  local current_prefix=`get_prefix $iface`
+
+  if [ -z "$current_prefix" ] || \
+     ! [ "$current_prefix" = "$new_ip6_prefix" ] ; then
+
+    # Setup the new IP
+    new_ip=`echo $new_ip6_prefix | /bin/sed -e 's@::/64@::1/64@g'`
+    if [ ! -z "$current_ip" ] ; then
+      ip -6 addr del $current_ip dev $iface
+    fi
+    ip -6 addr add $new_ip dev $iface
+
+    # Ensure we'll get router advertisements
+    sysctl -w "net.ipv6.conf.$EXT_IFACE.accept_ra=2"
+    # Needed for kernels before 2.6.37, don't worry,
+    # forwarding will still work as long as you have it set
+    # on your other interface.
+    sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
+  fi
+
+  update_radvd "$iface" "$new_ip6_prefix"
+}
+
 if [ "$interface" != "$EXT_IFACE" ] ; then
   return
 fi
@@ -100,6 +190,12 @@ case "$reason" in
     # and once for the prefix. We only care about the prefix.
     if [ ! -z "$new_ip6_prefix" ] ; then
       ipv6_prefix_setup
+    fi
+    ;;
+  RELEASE)
+    if [ -e /var/run/dhclient6.eth0.pid ]; then
+      echo 'Shutting down dhclient6'
+      kill `cat /var/run/dhclient6.eth0.pid`
     fi
     ;;
 esac

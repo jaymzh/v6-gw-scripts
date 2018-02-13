@@ -41,6 +41,8 @@
 # Change EXT_IFACE by updating the config file
 CONF='/etc/ipv6_prefix_dhclient.conf'
 EXT_IFACE='eth0'
+INT_IFACE='eth1'
+OTHER_IFACES=''
 PIDFILE="/var/run/dhclient6.$IFACE.pid"
 LEASEFILE="/var/lib/dhcp/dhclient6.$IFACE.leases"
 
@@ -66,7 +68,13 @@ if [ -s "$PIDFILE" ]; then
 fi
 
 # Start our new one
-cmd="/sbin/dhclient -6 -P -pf $PIDFILE -lf $LEASEFILE -v $IFACE"
+cmd="/sbin/dhclient -6 -pf $PIDFILE -lf $LEASEFILE -v $IFACE"
+
+# We need to request one prefix per interface we care about, not including
+# the external one, of course.
+for iface in $INT_IFACE $OTHER_IFACES; do
+  cmd="$cmd -P"
+done
 
 # We have to start it in a sub-shell later, it dies if we start it
 # directly from here for some reason.
