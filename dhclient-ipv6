@@ -138,7 +138,7 @@ update_dnsmasq() {
     int_prefix="$(get_prefix $tface)"
     int_dhcp_range="$(echo ${int_prefix} | cut -d '/' -f 1)"
 
-    prefixes="dhcp-range=${int_dhcp_range}, ra-stateless, ra-names\n"
+    prefixes="${prefixes}dhcp-range=${int_dhcp_range}, ra-stateless, ra-names\n"
   done
 
   sed -e "s@__INTERFACES__@$interfaces@g" \

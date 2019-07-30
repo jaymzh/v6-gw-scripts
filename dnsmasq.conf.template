@@ -1,16 +1,18 @@
 # Template file for dnsmasq generation
 # dnsmasq will default to sending v4 + v6 address of dnsmasq server
+# for DNS via DHCP
 
-# Enforce some standards
+# Never forward plain names (without a dot or domain part)
 bogus-priv
+# Never forward addresses in the non-routed address spaces.
 domain-needed
 
-# Defaults on the pi
+# Delays sending DHCPOFFER and proxydhcp replies for at least the specified number of seconds.
 dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
 dhcp-reply-delay=tag:client_is_a_pi,2
 
-# Mannually add all the interfaces you want dnsmasq to run on
-# interface=eth0
+# List of all the interfaces for dnsmasq to listen on
+# Sample interface line: interface=eth0
 __INTERFACES___
 
 # v4 - manually set these options
@@ -21,5 +23,5 @@ dhcp-range=eth0.69,10.6.9.10,10.6.9.200,24h
 
 
 # v6 Sateless RA + Names
-# dhcp-range=2601:647:4d01:fbf::, ra-stateless, ra-names
+# Sample DHCP range line: dhcp-range=2601:647:4d01:fbf::, ra-stateless, ra-names
 __PREFIXES__
