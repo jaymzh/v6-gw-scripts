@@ -1,0 +1,25 @@
+# Template file for dnsmasq generation
+# dnsmasq will default to sending v4 + v6 address of dnsmasq server
+
+# Enforce some standards
+bogus-priv
+domain-needed
+
+# Defaults on the pi
+dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
+dhcp-reply-delay=tag:client_is_a_pi,2
+
+# Mannually add all the interfaces you want dnsmasq to run on
+# interface=eth0
+__INTERFACES___
+
+# v4 - manually set these options
+dhcp-option=option:domain-search,cooperlees.com
+dhcp-option=option:router,10.6.9.2
+dhcp-range=eth0,192.168.107.10,192.168.107.100,1h
+dhcp-range=eth0.69,10.6.9.10,10.6.9.200,24h
+
+
+# v6 Sateless RA + Names
+# dhcp-range=2601:647:4d01:fbf::, ra-stateless, ra-names
+__PREFIXES__

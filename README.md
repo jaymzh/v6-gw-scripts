@@ -5,12 +5,19 @@ These are scripts to helpe people setup a v6 gateway on ISPs who hand out a v6 b
 ## Setup
 
 * Update /etc/sysctl.conf to set:
+
 ```
 net.ipv6.conf.$YOUR_EXTERNAL_INTERFACE.accept_ra=2
 net.ipv6.conf.$YOUR_EXTERNAL_INTERFACE.forwarding=0
 ```
 
 Replacing `$YOUR_EXTERNAL_INTERFACE` with your external interface.
+
+### RA Daemon
+
+These scripts can now support `dnsmasq` or `radvd`
+
+**For radvd:**
 
 * Install radvd on your gateway and create `/etc/radvd.conf.tmpl` (which these scripst will use to create radvd.conf) that looks like this:
 
@@ -24,15 +31,20 @@ interface __IFACE__
      AdvOnLink on;
      AdvAutonomous on;
    };
-};   
+};
 ```
 
 The scripts will update `__PREFIX__` and `__IFACE__` for you.
 
+**For dnsmasq:**
+
+* Install dnsmasq and create `/etc/dnsmasq.template` *(sample is included in the template - You need to set some params yourself)*
+  * The scripts will replace `__INTERFACES__` and `__PREFIXES__` for you.
+
+**Script Locations:**
+
 * Drop `dhclient-ipv6` into `/etc/dhcp/dhclient-exit-hooks.d/`
-
 * Drop `99-ipv6` into `/etc/network/if-up.d/` (or your distribution's equivalent)
-
 * Drop `ipv6_prefix_dhclient.conf` in `/etc` and update it to accurately represent your setup.
 
 ## Multiple prefix
