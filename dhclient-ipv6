@@ -193,10 +193,10 @@ case "$reason" in
     fi
     ;;
   RELEASE)
-    ext_int_pid="/var/run/dhclient6.${EXT_IFACE}.pid"
-    if [ -e "$ext_int_pid" ]; then
+    ext_iface_pid="/var/run/dhclient6.${EXT_IFACE}.pid"
+    if [ -e "$ext_iface_pid" ]; then
       echo "Shutting down dhclient6.${EXT_IFACE} via SIGINT"
-      kill $(cat ${ext_int_pid})
+      kill $(cat ${ext_iface_pid})
     fi
     ;;
 esac
