@@ -49,6 +49,7 @@ EXT_IFACE='eth0'
 INT_IFACE='eth1'
 OTHER_IFACES=''
 RADVD_TEMPLATE='/etc/radvd.conf.tmpl'
+DNSMASQ_TEMPLATE='/etc/dnsmasq.conf.tmpl'
 
 [ -r $CONF ] && . $CONF
 
@@ -122,6 +123,40 @@ get_prefix() {
   echo $current_ip | /bin/sed -e 's@::1/64@::/64@'
 }
 
+update_dnsmasq() {
+  local iface="$1"
+  local prefix="$2"
+
+  tmpfile="/tmp/dnsmasq.conf.$$"
+  rm -f "$tmpfile"
+
+  interfaces=''
+  prefixes=''
+  for tface in $INT_IFACE $OTHER_IFACES; do
+    interfaces="${interfaces}interface=${tface}\n"
+
+    int_prefix="$(get_prefix $tface)"
+    int_dhcp_range="$(echo ${int_prefix} | cut -d '/' -f 1)"
+
+    prefixes="${prefixes}dhcp-range=${int_dhcp_range}, ra-stateless, ra-names\n"
+  done
+
+  sed -e "s@__INTERFACES__@$interfaces@g" \
+      -e "s@__PREFIXES__@$prefixes@g" $DNSMASQ_TEMPLATE \
+      >> $tmpfile
+
+  diff $tmpfile /etc/dnsmasq.conf > /dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    # Update config and restart radvd
+    mv $tmpfile /etc/dnsmasq.conf
+    systemctl restart dnsmasq
+  else
+    rm $tmpfile
+    # ensure it's running anyway
+    systemctl start dnsmasq
+  fi
+}
+
 update_radvd() {
   local iface="$1"
   local prefix="$2"
@@ -177,7 +212,11 @@ ipv6_prefix_setup() {
     sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
   fi
 
-  update_radvd "$iface" "$new_ip6_prefix"
+  if [ "$RA_DAEMON" == "dnsmasq" ]; then
+    update_dnsmasq "$iface" "$new_ip6_prefix"
+  else
+    update_radvd "$iface" "$new_ip6_prefix"
+  fi
 }
 
 if [ "$interface" != "$EXT_IFACE" ] ; then

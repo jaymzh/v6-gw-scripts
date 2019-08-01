@@ -1,0 +1,27 @@
+# Template file for dnsmasq generation
+# dnsmasq will default to sending v4 + v6 address of dnsmasq server
+# for DNS via DHCP
+
+# Never forward plain names (without a dot or domain part)
+bogus-priv
+# Never forward addresses in the non-routed address spaces.
+domain-needed
+
+# Delays sending DHCPOFFER and proxydhcp replies for at least the specified number of seconds.
+dhcp-mac=set:client_is_a_pi,B8:27:EB:*:*:*
+dhcp-reply-delay=tag:client_is_a_pi,2
+
+# List of all the interfaces for dnsmasq to listen on
+# Sample interface line: interface=eth0
+__INTERFACES___
+
+# v4 - manually set these options
+dhcp-option=option:domain-search,cooperlees.com
+dhcp-option=option:router,10.6.9.2
+dhcp-range=eth0,192.168.107.10,192.168.107.100,1h
+dhcp-range=eth0.69,10.6.9.10,10.6.9.200,24h
+
+
+# v6 Sateless RA + Names
+# Sample DHCP range line: dhcp-range=2601:647:4d01:fbf::, ra-stateless, ra-names
+__PREFIXES__
