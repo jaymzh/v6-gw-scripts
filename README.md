@@ -38,7 +38,7 @@ The scripts will update `__PREFIX__` and `__IFACE__` for you.
 
 **For dnsmasq:**
 
-* Install dnsmasq and create `/etc/dnsmasq.template` *(sample is included in the template - You need to set some params yourself)*
+* Install dnsmasq and create `/etc/dnsmasq.conf.tmpl` *(sample is included in the template - You need to set some params yourself)*
   * The scripts will replace `__INTERFACES__` and `__PREFIXES__` for you.
 
 **Script Locations:**

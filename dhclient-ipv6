@@ -49,7 +49,7 @@ EXT_IFACE='eth0'
 INT_IFACE='eth1'
 OTHER_IFACES=''
 RADVD_TEMPLATE='/etc/radvd.conf.tmpl'
-DNSMASQ_TEMPLATE='/etc/dnsmasq.template'
+DNSMASQ_TEMPLATE='/etc/dnsmasq.conf.tmpl'
 
 [ -r $CONF ] && . $CONF
 
@@ -130,8 +130,8 @@ update_dnsmasq() {
   tmpfile="/tmp/dnsmasq.conf.$$"
   rm -f "$tmpfile"
 
-  interfaces=""
-  prefixes=""
+  interfaces=''
+  prefixes=''
   for tface in $INT_IFACE $OTHER_IFACES; do
     interfaces="${interfaces}interface=${tface}\n"
 
