@@ -125,7 +125,8 @@ get_prefix() {
     /sbin/ip -6 addr show dev "$iface" scope global |\
     /usr/bin/awk '/inet6/ {print $2}'
   )
-  echo "$current_ip" | /bin/sed -E 's@::1/([0-9]{2})@::/\1@'
+  # We'll always configure with a /64 even if we got something bigger
+  echo "$current_ip" | /bin/sed -E 's@::1/64@::/64@'
 }
 
 update_dnsmasq() {
@@ -165,6 +166,13 @@ update_radvd() {
   local iface="$1"
   local prefix="$2"
 
+  # the shell we get from dhclient doesn't have [[ ]]
+  if ! echo "$prefix" | grep -q '/64$'; then
+    # if we got something bigger than a /64, we must just use the
+    # first /64 as autoconfig only works in /64s
+    net=$(echo "$prefix" | cut -f1 -d/)
+    prefix="$net/64"
+  fi
   tmpfile="/tmp/radvd.conf.$$"
   rm -f "$tmpfile"
   for tface in $INT_IFACE $OTHER_IFACES; do
@@ -207,7 +215,12 @@ ipv6_prefix_setup() {
      ! [ "$current_prefix" = "$new_ip6_prefix" ] ; then
 
     # Setup the new IP
-    new_ip=$(echo "$new_ip6_prefix" | /bin/sed -E 's@::/([0-9]{2})@::1/\1@')
+    # Note that no matter what size prefix we were given, you have to make
+    # it a /64 for autoconfig to work, so we cut it down to /64
+    #
+    # TODO for the future - if your ISP gives us bigger than a /54, allow
+    # the user to cut it up instead of requesting multiple
+    new_ip=$(echo "$new_ip6_prefix" | /bin/sed -E 's@::/([0-9]{2})@::1/64@')
     if [ -n "$current_ip" ] ; then
       ip -6 addr del "$current_ip" dev "$iface"
     fi
