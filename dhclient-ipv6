@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # vim:tw=80:tabstop=2:shiftwidth=2:expandtab
 
@@ -50,7 +50,9 @@ INT_IFACE='eth1'
 OTHER_IFACES=''
 RADVD_TEMPLATE='/etc/radvd.conf.tmpl'
 DNSMASQ_TEMPLATE='/etc/dnsmasq.conf.tmpl'
+RA_DAEMON='radvd'
 
+# shellcheck disable=SC1090
 [ -r $CONF ] && . $CONF
 
 STATE_DIR=/var/lib/dhcp/dhclient-ipv6-mapping
@@ -59,7 +61,7 @@ set_iaid_mapping() {
   local iaid="$1"
   local iface="$2"
 
-  echo $iface > "$STATE_DIR/iaid_$iaid"
+  echo "$iface" > "$STATE_DIR/iaid_$iaid"
 }
 
 get_interface() {
@@ -80,18 +82,18 @@ get_interface() {
 
   # if we've mapped this iaid to an interface, just cat it out
   if [ -e "$STATE_DIR/iaid_$iaid" ]; then
-    iface=`cat "$STATE_DIR/iaid_$iaid"`
+    iface=$(cat "$STATE_DIR/iaid_$iaid")
     # we're not changing the mapping, but we call update anyway mostly
     # as a `touch` for the code below that checks the time
-    echo $iface
+    echo "$iface"
     set_iaid_mapping "$iaid" "$iface"
     return
   fi
 
   # we haven't - so let's see if we have an interfaces not-yet-mapped
   known=""
-  for file in $STATE_DIR/iaid_*; do
-    known="$known `cat $file`"
+  for file in "$STATE_DIR"/iaid_*; do
+    known="$known $(cat "$file")"
   done
   for iface in $INT_IFACE $OTHER_IFACES; do
     for kface in $known; do
@@ -109,18 +111,21 @@ get_interface() {
   # just return the least-recently touched file. This is a bit odd, because
   # we'll end up populating them in the reverse order, but we won't just end up
   # re-doing one we just did
-  last=`ls -t $STATE_DIR/iaid_* | tail -n 1`
-  iface=`cat "$last"`
+  # shellcheck disable=SC2012
+  last=$(ls -t $STATE_DIR/iaid_* | tail -n 1)
+  iface=$(cat "$last")
   rm -f "$last"
-  echo $iface
+  echo "$iface"
   set_iaid_mapping "$iaid" "$iface"
 }
 
 get_prefix() {
   local iface="$1"
-  current_ip=`/sbin/ip -6 addr show dev $iface scope global |\
-               /usr/bin/awk '/inet6/ {print $2}'`
-  echo $current_ip | /bin/sed -e 's@::1/64@::/64@'
+  current_ip=$(
+    /sbin/ip -6 addr show dev "$iface" scope global |\
+    /usr/bin/awk '/inet6/ {print $2}'
+  )
+  echo "$current_ip" | /bin/sed -E 's@::1/([0-9]{2})@::/\1@'
 }
 
 update_dnsmasq() {
@@ -136,7 +141,7 @@ update_dnsmasq() {
     interfaces="${interfaces}interface=${tface}\n"
 
     int_prefix="$(get_prefix $tface)"
-    int_dhcp_range="$(echo ${int_prefix} | cut -d '/' -f 1)"
+    int_dhcp_range="$(echo "$int_prefix" | cut -d '/' -f 1)"
 
     prefixes="${prefixes}dhcp-range=${int_dhcp_range}, ra-stateless, ra-names\n"
   done
@@ -145,8 +150,7 @@ update_dnsmasq() {
       -e "s@__PREFIXES__@$prefixes@g" $DNSMASQ_TEMPLATE \
       >> $tmpfile
 
-  diff $tmpfile /etc/dnsmasq.conf > /dev/null 2>&1
-  if [ $? -ne 0 ]; then
+  if ! diff $tmpfile /etc/dnsmasq.conf > /dev/null 2>&1; then
     # Update config and restart radvd
     mv $tmpfile /etc/dnsmasq.conf
     systemctl restart dnsmasq
@@ -169,7 +173,7 @@ update_radvd() {
           -e "s@__IFACE__@$iface@g" $RADVD_TEMPLATE \
           >> $tmpfile
     else
-      tprefix=`get_prefix $tface`
+      tprefix=$(get_prefix $tface)
       if [ -z "$tprefix" ]; then
         continue
       fi
@@ -178,8 +182,7 @@ update_radvd() {
           >> $tmpfile
     fi
   done
-  diff $tmpfile /etc/radvd.conf >/dev/null 2>/dev/null
-  if [ $? -ne 0 ]; then
+  if ! diff $tmpfile /etc/radvd.conf >/dev/null 2>/dev/null; then
     # Update config and restart radvd
     mv $tmpfile /etc/radvd.conf
     service radvd restart
@@ -191,18 +194,24 @@ update_radvd() {
 }
 
 ipv6_prefix_setup() {
-  local iface=`get_interface "$new_iaid"`
-  local current_prefix=`get_prefix $iface`
+  local iface
+  local current_prefix
 
+  # new_iaid comes from DHCP
+  # shellcheck disable=SC2154
+  iface=$(get_interface "$new_iaid")
+  current_prefix=$(get_prefix "$iface")
+
+  # shellcheck disable=SC2154
   if [ -z "$current_prefix" ] || \
      ! [ "$current_prefix" = "$new_ip6_prefix" ] ; then
 
     # Setup the new IP
-    new_ip=`echo $new_ip6_prefix | /bin/sed -e 's@::/64@::1/64@g'`
-    if [ ! -z "$current_ip" ] ; then
-      ip -6 addr del $current_ip dev $iface
+    new_ip=$(echo "$new_ip6_prefix" | /bin/sed -E 's@::/([0-9]{2})@::1/\1@')
+    if [ -n "$current_ip" ] ; then
+      ip -6 addr del "$current_ip" dev "$iface"
     fi
-    ip -6 addr add $new_ip dev $iface
+    ip -6 addr add "$new_ip" dev "$iface"
 
     # Ensure we'll get router advertisements
     sysctl -w "net.ipv6.conf.$EXT_IFACE.accept_ra=2"
@@ -212,22 +221,26 @@ ipv6_prefix_setup() {
     sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
   fi
 
-  if [ "$RA_DAEMON" == "dnsmasq" ]; then
+  if [ "$RA_DAEMON" = "dnsmasq" ]; then
     update_dnsmasq "$iface" "$new_ip6_prefix"
   else
     update_radvd "$iface" "$new_ip6_prefix"
   fi
 }
 
+# interface comes from DHCP
+# shellcheck disable=SC2154
 if [ "$interface" != "$EXT_IFACE" ] ; then
   return
 fi
 
+# reason comes from DHCP
+# shellcheck disable=SC2154
 case "$reason" in
   BOUND6|REBIND6)
     # We will get called twice here - once for the temp address
     # and once for the prefix. We only care about the prefix.
-    if [ ! -z "$new_ip6_prefix" ] ; then
+    if [ -n "$new_ip6_prefix" ] ; then
       ipv6_prefix_setup
     fi
     ;;
@@ -235,7 +248,7 @@ case "$reason" in
     ext_iface_pid="/var/run/dhclient6.${EXT_IFACE}.pid"
     if [ -e "$ext_iface_pid" ]; then
       echo "Shutting down dhclient6.${EXT_IFACE} via SIGINT"
-      kill $(cat ${ext_iface_pid})
+      kill "$(cat "$ext_iface_pid")"
     fi
     ;;
 esac
