@@ -31,6 +31,10 @@ Copy it to the right location:
 * For `NetworkManager`, that's `/etc/NetworkManager/dispatcher.d/` (though these scripts have not been tested with NM)
 * For `systemd-networkd`, you'll have to use something like `netword-dispatcher`
 
+Note that you should *not* add a `inet6` entry for your interface in
+`/etc/network/interfaces`. These scripts use the v4 up event to kick off the v6
+configuration.
+
 ### Configuration hook for your DHCP client
 
 Once you have your addresses, this hook will update the addresses on the relevant interface(s) and update your `radvd` or `dnsmasq` configuration with the relevant addresses.
