@@ -44,6 +44,7 @@ EXT_IFACE='eth0'
 INT_IFACE='eth1'
 OTHER_IFACES=''
 SEPARATE_NETS=0
+REQUEST_ADDRESS=1
 PIDFILE="/var/run/dhclient6.$IFACE.pid"
 LEASEFILE="/var/lib/dhcp/dhclient6.$IFACE.leases"
 
@@ -79,6 +80,12 @@ else
   for iface in $INT_IFACE $OTHER_IFACES; do
     cmd="$cmd -P"
   done
+fi
+
+# -P disables the normal address request, so ask for one (for the gateway
+# itself) explicitly if desired.
+if [ "$REQUEST_ADDRESS" -eq 1 ]; then
+  cmd="$cmd -N"
 fi
 
 # We have to start it in a sub-shell later, it dies if we start it
