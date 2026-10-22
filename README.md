@@ -1,5 +1,9 @@
 # v6-gw-scripts
 
+[![Lint](
+https://github.com/jaymzh/v6-gw-scripts/actions/workflows/lint.yml/badge.svg
+)](https://github.com/jaymzh/v6-gw-scripts/actions/workflows/lint.yml)
+
 These are scripts to helpe people setup a v6 gateway on ISPs who support requestiong IPv6 blocks via DHCPv6.
 
 These scripts have been tested on both Comcast/Xfinity and GFiber/Webpass.
