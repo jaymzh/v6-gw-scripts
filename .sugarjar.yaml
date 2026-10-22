@@ -1,3 +1,3 @@
 lint:
   - scripts/run_shellcheck.sh
-#on_push: [lint]
+on_push: [lint]
