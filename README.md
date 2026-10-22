@@ -34,40 +34,68 @@ supported variables and a description of what they do.
 
 The first step is to install the `99-ipv6` hook script into the relevant place
 for your network manager. This script is what fires off the DHCPv6 request when
-your interfaces comes up. It handles requesting the right number and size of
+your interface comes up. It handles requesting the right number and size of
 block based on your configuration.
 
 Copy it to the right location:
 
 * For `ifup`, that's `/etc/network/if-up.d/`
 * For `NetworkManager`, that's `/etc/NetworkManager/dispatcher.d/` (though
-  these scripts have not been tested with NM)
+  these scripts have not been tested with NM). Make sure
+  `NetworkManager-dispatcher.service` is enabled.
 * For `systemd-networkd`, you'll have to use something like
-  `netword-dispatcher`
+  `networkd-dispatcher`, but that has not been tested at all.
 
-Note that you should *not* add a `inet6` entry for your interface in
-`/etc/network/interfaces`. These scripts use the v4 up event to kick off the v6
-configuration.
+Note that you should *NOT* let your network stack configure IPv6 on its
+own, that will conflict with these scripts. That means:
+
+* For `ifup` do *not* set an `inet6` entry
+* For NetworkManager, tell it to ignore IPv6 on all interfaces:
+  `nmcli connection modify <conn> ipv6.method ignore` (run for each `<conn>`)
 
 ### Configuration hook for your DHCP client
 
 Once you have your addresses, this hook will update the addresses on the
-relevant interface(s) and update your `radvd` or `dnsmasq` configuration with
-the relevant addresses.
+relevant interface(s) (when needed) and update your `radvd` or `dnsmasq`
+configuration with the relevant addresses.
 
 Copy `dhclient-ipv6` to the relevant location for your DHCP client:
 
-* On Debian (ISC) this is `/etc/dhcp/dhclient-exit-hooks.d``
-* On Fedora-like (DHCPCD) this is `/etc/dhcpcd.exit-hook/`
+* For ISC dhclient this is `/etc/dhcp/dhclient-exit-hooks.d/`
+* For dhcpcd, copy it to `/etc/dhcpcd.exit-hook` (a file, not a directory)
+
+#### dhcpcd
+
+If you use dhcpcd, set `DHCP_CLIENT="dhcpcd"` in your config. dhcpcd
+requests the prefix and assigns it to your internal interfaces itself, so
+the hook only updates your RA daemon config. Tell dhcpcd what to request and
+where to put it in `/etc/dhcpcd.conf`, for example:
+
+```text
+interface eth1
+  ipv6rs
+  # Optional: an address for the gateway itself
+  ia_na 1
+  # Request a /60 and give a /64 from it to eth0 and eth2
+  ia_pd 2/::/60 eth0/0/64 eth2/1/64
+```
+
+`99-ipv6` starts a per-interface `dhcpcd -6` on your external interface, so
+don't also have the system-wide dhcpcd service managing it.
+
+Alternatively, if dhcpcd is already what manages your external interface (i.e.
+you're not using `ifup` or `NetworkManager` for it), skip `99-ipv6` and just
+configure the system-wide `dhcpcd`. Ensure it doesn't also try to configure
+your internal interfaces.
 
 ### RA Daemon
 
-These scripts can now support `dnsmasq` or `radvd`
+These scripts can support `radvd` or `dnsmasq`.
 
 #### radvd
 
 Install radvd on your gateway and create `/etc/radvd.conf.tmpl` (which these
-scripst will use to create radvd.conf) that looks like this:
+scripts will use to create radvd.conf) that looks like this:
 
 ```text
 interface __IFACE__

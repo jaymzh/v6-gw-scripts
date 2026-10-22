@@ -35,8 +35,20 @@
 # You can find the latest version of this at:
 #   https://github.com/jaymzh/v6-gw-scripts
 #
-# Debian-style if-up.d script for firing off dhclient for ipv6
+# Debian-style if-up.d script for firing off dhclient for ipv6. Also works as
+# a NetworkManager dispatcher script.
 #
+
+# NetworkManager's dispatcher passes the interface and action as arguments
+# rather than setting IFACE/MODE like ifupdown does.
+if [ -n "$1" ] && [ -n "$2" ]; then
+  IFACE="$1"
+  if [ "$2" = "up" ]; then
+    MODE=start
+  else
+    MODE="$2"
+  fi
+fi
 
 # Change EXT_IFACE by updating the config file
 CONF='/etc/ipv6_prefix_dhclient.conf'
@@ -44,6 +56,7 @@ EXT_IFACE='eth0'
 INT_IFACE='eth1'
 OTHER_IFACES=''
 SEPARATE_NETS=0
+DHCP_CLIENT='dhclient'
 PIDFILE="/var/run/dhclient6.$IFACE.pid"
 LEASEFILE="/var/lib/dhcp/dhclient6.$IFACE.leases"
 
@@ -55,7 +68,7 @@ if [ "$IFACE" != "$EXT_IFACE" ]; then
     exit 0
 fi
 
-# Only run from ifup.
+# Only run when the interface comes up.
 if [ "$MODE" != start ]; then
     logger -t 99-ipv6 "Called with mode $MODE, skipping"
     exit 0
@@ -63,29 +76,53 @@ fi
 
 logger -t 99-ipv6 "Configuring $IFACE for v6..."
 
-# If there's a stale dhclient, kill it
-if [ -s "$PIDFILE" ]; then
-    kill $(cat $PIDFILE) &>/dev/null
-fi
+if [ "$DHCP_CLIENT" = "dhcpcd" ]; then
+  # If there's a stale dhcpcd, stop it
+  /sbin/dhcpcd -6 -x "$IFACE" &>/dev/null
 
-# Start our new one
-cmd="/sbin/dhclient -6 -pf $PIDFILE -lf $LEASEFILE -v $IFACE"
-
-if [ "$SEPARATE_NETS" -eq 0 ]; then
-  cmd="$cmd -P --prefix-len-hint 60"
+  # What to request (ia_na, ia_pd, etc.) comes from dhcpcd.conf
+  cmd="/sbin/dhcpcd -6 $IFACE"
+  # flag to keep it in the foreground
+  fg_flag='-B'
 else
-  # We need to request one prefix per interface we care about, not including
-  # the external one, of course.
-  for iface in $INT_IFACE $OTHER_IFACES; do
-    cmd="$cmd -P"
-  done
+  # If there's a stale dhclient, kill it
+  if [ -s "$PIDFILE" ]; then
+      kill $(cat $PIDFILE) &>/dev/null
+  fi
+
+  # Start our new one
+  cmd="/sbin/dhclient -6 -pf $PIDFILE -lf $LEASEFILE -v $IFACE"
+  fg_flag='-d'
+
+  if [ "$SEPARATE_NETS" -eq 0 ]; then
+    cmd="$cmd -P --prefix-len-hint 60"
+  else
+    # We need to request one prefix per interface we care about, not including
+    # the external one, of course.
+    for iface in $INT_IFACE $OTHER_IFACES; do
+      cmd="$cmd -P"
+    done
+  fi
 fi
 
-# We have to start it in a sub-shell later, it dies if we start it
-# directly from here for some reason.
-( ( sleep 5; $cmd ) & ) &
+# The delay gives the interface time to get a link-local address.
+if [ -d /run/systemd/system ]; then
+  # Run it in its own unit, otherwise it gets killed along with the rest of
+  # our cgroup (e.g. when NetworkManager-dispatcher exits). It has to stay in
+  # the foreground so systemd can track it.
+  unit="${DHCP_CLIENT}6-$IFACE"
+  systemctl stop "$unit" &>/dev/null
+  systemd-run --quiet --collect --unit="$unit" \
+    /bin/sh -c "sleep 5; exec $cmd $fg_flag"
+else
+  # We have to start it in a sub-shell later, it dies if we start it
+  # directly from here for some reason.
+  ( ( sleep 5; $cmd ) & ) &
+fi
 
 # reload firewall rules
-/etc/network/ip6tables reload
+if [ -x /etc/network/ip6tables ]; then
+  /etc/network/ip6tables reload
+fi
 
 exit 0
