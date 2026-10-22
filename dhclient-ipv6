@@ -47,6 +47,7 @@
 CONF='/etc/ipv6_prefix_dhclient.conf'
 EXT_IFACE='eth0'
 INT_IFACE='eth1'
+SEPARATE_NETS=0
 OTHER_IFACES=''
 RADVD_TEMPLATE='/etc/radvd.conf.tmpl'
 DNSMASQ_TEMPLATE='/etc/dnsmasq.conf.tmpl'
@@ -77,6 +78,7 @@ get_interface() {
   if [ $? -eq 2 ]; then
     echo $INT_IFACE
     set_iaid_mapping "$iaid" "$INT_IFACE"
+    return
   fi
 
 
@@ -119,6 +121,16 @@ get_interface() {
   set_iaid_mapping "$iaid" "$iface"
 }
 
+# Usage: split_prefix <prefix/len> <count>  -> first <count> /64s, one per line
+split_prefix() {
+  /usr/bin/python3 - "$1" "$2" <<'EOF'
+import ipaddress, itertools, sys
+net = ipaddress.ip_network(sys.argv[1], strict=False)
+for s in itertools.islice(net.subnets(new_prefix=64), int(sys.argv[2])):
+  print(s)
+EOF
+}
+
 get_prefix() {
   local iface="$1"
   current_ip=$(
@@ -130,9 +142,6 @@ get_prefix() {
 }
 
 update_dnsmasq() {
-  local iface="$1"
-  local prefix="$2"
-
   tmpfile="/tmp/dnsmasq.conf.$$"
   rm -f "$tmpfile"
 
@@ -163,33 +172,18 @@ update_dnsmasq() {
 }
 
 update_radvd() {
-  local iface="$1"
-  local prefix="$2"
-
-  # the shell we get from dhclient doesn't have [[ ]]
-  if ! echo "$prefix" | grep -q '/64$'; then
-    # if we got something bigger than a /64, we must just use the
-    # first /64 as autoconfig only works in /64s
-    net=$(echo "$prefix" | cut -f1 -d/)
-    prefix="$net/64"
-  fi
   tmpfile="/tmp/radvd.conf.$$"
   rm -f "$tmpfile"
   for tface in $INT_IFACE $OTHER_IFACES; do
-    if [ "$iface" = "$tface" ]; then
-      sed -e "s@__PREFIX__@$prefix@g" \
-          -e "s@__IFACE__@$iface@g" $RADVD_TEMPLATE \
-          >> $tmpfile
-    else
-      tprefix=$(get_prefix $tface)
-      if [ -z "$tprefix" ]; then
-        continue
-      fi
-      sed -e "s@__PREFIX__@$tprefix@g" \
-          -e "s@__IFACE__@$tface@g" $RADVD_TEMPLATE \
-          >> $tmpfile
+    tprefix=$(get_prefix $tface)
+    if [ -z "$tprefix" ]; then
+      continue
     fi
+    sed -e "s@__PREFIX__@$tprefix@g" \
+        -e "s@__IFACE__@$tface@g" $RADVD_TEMPLATE \
+        >> $tmpfile
   done
+  [ -s "$tmpfile" ] || return
   if ! diff $tmpfile /etc/radvd.conf >/dev/null 2>/dev/null; then
     # Update config and restart radvd
     mv $tmpfile /etc/radvd.conf
@@ -203,42 +197,90 @@ update_radvd() {
 
 ipv6_prefix_setup() {
   local iface
-  local current_prefix
 
+  if [ "$SEPARATE_NETS" -eq 0 ]; then
+    split_net_and_setup_v6
+  else
+    setup_individual_v6_net
+  fi
+
+  # Ensure we'll get router advertisements
+  sysctl -w "net.ipv6.conf.$EXT_IFACE.accept_ra=2"
+  # Needed for kernels before 2.6.37, don't worry,
+  # forwarding will still work as long as you have it set
+  # on your other interface.
+  sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
+
+  if [ "$RA_DAEMON" = "dnsmasq" ]; then
+    update_dnsmasq
+  else
+    update_radvd
+  fi
+}
+
+prefix_to_ip() {
+  local prefix
+  prefix="$1"
+  echo "$prefix" | /bin/sed -E 's@::/([0-9]{2})@::1/64@'
+}
+
+split_net_and_setup_v6() {
+  local iface
+  local num_nets
+
+  #
+  # Since we don't have bash, we can't use arrays, so put all the nets
+  # into positional parameters ($1, $2, etc.), and shift as we go...
+  #
+  num_nets=$(echo $INT_IFACE $OTHER_IFACES | wc -w)
+  # shellcheck disable=SC2046
+  set -- $(split_prefix "$new_ip6_prefix" "$num_nets")
+  for iface in $INT_IFACE $OTHER_IFACES; do
+    if [ -z "$1" ]; then
+      logger -t dhclient-ipv6 "$new_ip6_prefix has no /64 left for $iface"
+      break
+    fi
+    ensure_net "$iface" "$1"
+    shift
+  done
+}
+
+device_addresses() {
+  local device="$1"
+
+  ip -6 addr show scope global dev $device | awk '/inet6/ {print $2}'
+}
+
+ensure_net() {
+  local iface="$1"
+  local net="$2"
+  local ip
+  local taddress
+  local addresses
+  local needs_address
+
+  ip=$(prefix_to_ip "$net")
+  addresses=$(device_addresses $iface)
+  needs_address=1
+  for taddress in $addresses; do
+    if [ "$taddress" = "$ip" ]; then
+      needs_address=0
+      continue
+    fi
+    ip -6 addr del $taddress dev $iface
+  done
+
+  if [ "$needs_address" -eq 1 ]; then
+    ip -6 addr add $ip dev $iface
+  fi
+}
+
+setup_individual_v6_net() {
   # new_iaid comes from DHCP
   # shellcheck disable=SC2154
   iface=$(get_interface "$new_iaid")
-  current_prefix=$(get_prefix "$iface")
 
-  # shellcheck disable=SC2154
-  if [ -z "$current_prefix" ] || \
-     ! [ "$current_prefix" = "$new_ip6_prefix" ] ; then
-
-    # Setup the new IP
-    # Note that no matter what size prefix we were given, you have to make
-    # it a /64 for autoconfig to work, so we cut it down to /64
-    #
-    # TODO for the future - if your ISP gives us bigger than a /54, allow
-    # the user to cut it up instead of requesting multiple
-    new_ip=$(echo "$new_ip6_prefix" | /bin/sed -E 's@::/([0-9]{2})@::1/64@')
-    if [ -n "$current_ip" ] ; then
-      ip -6 addr del "$current_ip" dev "$iface"
-    fi
-    ip -6 addr add "$new_ip" dev "$iface"
-
-    # Ensure we'll get router advertisements
-    sysctl -w "net.ipv6.conf.$EXT_IFACE.accept_ra=2"
-    # Needed for kernels before 2.6.37, don't worry,
-    # forwarding will still work as long as you have it set
-    # on your other interface.
-    sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
-  fi
-
-  if [ "$RA_DAEMON" = "dnsmasq" ]; then
-    update_dnsmasq "$iface" "$new_ip6_prefix"
-  else
-    update_radvd "$iface" "$new_ip6_prefix"
-  fi
+  ensure_net "$iface" "$new_ip6_prefix"
 }
 
 # interface comes from DHCP
@@ -250,7 +292,7 @@ fi
 # reason comes from DHCP
 # shellcheck disable=SC2154
 case "$reason" in
-  BOUND6|REBIND6)
+  BOUND6|REBIND6|RENEW6)
     # We will get called twice here - once for the temp address
     # and once for the prefix. We only care about the prefix.
     if [ -n "$new_ip6_prefix" ] ; then
