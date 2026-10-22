@@ -84,6 +84,12 @@ There are 2 ways to support multiple prefixes:
 1. The default requests a single /60 and split it up to give one /64 to each interface you specify in your config.
 2. If you set SEPARATE_NETS=1 in your config, we will request a /64 for each interface directly from your ISP, assign one to each interface, and cache which lease is which so we can persist that across renewals. The scripts will keep track of this in `/var/lib/dhcp/dhclient-ipv6-mapping`.
 
+## Gateway address
+
+By default, in addition to the prefix(es), we also request a single address
+for the gateway itself (a DHCPv6 IA_NA) and assign it to your external
+interface. Set `REQUEST_ADDRESS=0` in your config to disable this.
+
 ## Extra notes:
 
 * You need at least version 4.1.1-P1-17 of isc-dhcp-client (if you're using ISC)
