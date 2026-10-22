@@ -44,9 +44,11 @@ EXT_IFACE='eth0'
 INT_IFACE='eth1'
 OTHER_IFACES=''
 SEPARATE_NETS=0
+# shellcheck disable=SC2153
 PIDFILE="/var/run/dhclient6.$IFACE.pid"
 LEASEFILE="/var/lib/dhcp/dhclient6.$IFACE.leases"
 
+# shellcheck disable=SC1090
 [ -r $CONF ] && . $CONF
 
 # We only care about the external interface.
@@ -65,7 +67,7 @@ logger -t 99-ipv6 "Configuring $IFACE for v6..."
 
 # If there's a stale dhclient, kill it
 if [ -s "$PIDFILE" ]; then
-    kill $(cat $PIDFILE) &>/dev/null
+    kill "$(cat "$PIDFILE")" &>/dev/null
 fi
 
 # Start our new one
@@ -76,6 +78,7 @@ if [ "$SEPARATE_NETS" -eq 0 ]; then
 else
   # We need to request one prefix per interface we care about, not including
   # the external one, of course.
+  # shellcheck disable=SC2034
   for iface in $INT_IFACE $OTHER_IFACES; do
     cmd="$cmd -P"
   done
