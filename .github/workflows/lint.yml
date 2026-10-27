@@ -14,7 +14,6 @@ jobs:
       contents: read
       pull-requests: read
     runs-on: ubuntu-latest
-    name: Check if all files end in newline
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
