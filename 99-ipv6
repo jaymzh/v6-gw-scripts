@@ -35,8 +35,8 @@
 # You can find the latest version of this at:
 #   https://github.com/jaymzh/v6-gw-scripts
 #
-# Debian-style if-up.d script for firing off dhclient for ipv6. Also works as
-# a NetworkManager dispatcher script.
+# Debian-style if-up.d script for firing off dhclient (or dhcpcd) for ipv6.
+# Also works as a NetworkManager dispatcher script.
 #
 
 # NetworkManager's dispatcher passes the interface and action as arguments

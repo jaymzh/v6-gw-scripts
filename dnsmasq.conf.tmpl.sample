@@ -13,7 +13,7 @@ dhcp-reply-delay=tag:client_is_a_pi,2
 
 # List of all the interfaces for dnsmasq to listen on
 # Sample interface line: interface=eth0
-__INTERFACES___
+__INTERFACES__
 
 # v4 - manually set these options
 dhcp-option=option:domain-search,cooperlees.com
@@ -22,6 +22,6 @@ dhcp-range=eth0,192.168.107.10,192.168.107.100,1h
 dhcp-range=eth0.69,10.6.9.10,10.6.9.200,24h
 
 
-# v6 Sateless RA + Names
+# v6 Stateless RA + Names
 # Sample DHCP range line: dhcp-range=2601:647:4d01:fbf::, ra-stateless, ra-names
 __PREFIXES__
