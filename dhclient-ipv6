@@ -42,6 +42,10 @@
 # prefix, and "__IFACE__" with your internal interface, and - if it's different
 # from /etc/radvd.conf - replaces the config file and restarts the daemon.
 #
+# It can also be used as a dhcpcd hook. dhcpcd assigns the delegated prefixes
+# to the internal interfaces itself (see ia_pd in dhcpcd.conf), so in that
+# case this only updates the RA daemon config.
+#
 
 # Change INT_IFACE or EXT_IFACE by setting them in the config file
 CONF='/etc/ipv6_prefix_dhclient.conf'
@@ -52,6 +56,7 @@ OTHER_IFACES=''
 RADVD_TEMPLATE='/etc/radvd.conf.tmpl'
 DNSMASQ_TEMPLATE='/etc/dnsmasq.conf.tmpl'
 RA_DAEMON='radvd'
+DHCP_CLIENT='dhclient'
 
 # shellcheck disable=SC1090
 [ -r $CONF ] && . $CONF
@@ -211,6 +216,10 @@ ipv6_prefix_setup() {
   # on your other interface.
   sysctl -w "net.ipv6.conf.$EXT_IFACE.forwarding=0"
 
+  update_ra_daemon
+}
+
+update_ra_daemon() {
   if [ "$RA_DAEMON" = "dnsmasq" ]; then
     update_dnsmasq
   else
@@ -284,6 +293,19 @@ setup_individual_v6_net() {
 
   ensure_net "$iface" "$new_ip6_prefix"
 }
+
+if [ "$DHCP_CLIENT" = "dhcpcd" ]; then
+  # reason comes from DHCP
+  # shellcheck disable=SC2154
+  case "$reason" in
+    # DELEGATED6 fires on each internal interface as dhcpcd assigns it a
+    # prefix, the rest on the external interface.
+    BOUND6|REBIND6|RENEW6|REBOOT6|DELEGATED6)
+      update_ra_daemon
+      ;;
+  esac
+  return
+fi
 
 # interface comes from DHCP
 # shellcheck disable=SC2154
