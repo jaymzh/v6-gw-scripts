@@ -102,6 +102,12 @@ There are 2 ways to support multiple prefixes:
    which lease is which so we can persist that across renewals. The scripts
    will keep track of this in `/var/lib/dhcp/dhclient-ipv6-mapping`.
 
+## Gateway address
+
+By default, in addition to the prefix(es), we also request a single address
+for the gateway itself (a DHCPv6 IA_NA) and assign it to your external
+interface. Set `REQUEST_ADDRESS=0` in your config to disable this.
+
 ## Extra notes:
 
 * You need at least version 4.1.1-P1-17 of isc-dhcp-client (if you're using
