@@ -104,7 +104,7 @@ get_interface() {
       fi
     done
     # This interface is not yet mapped, return it
-    echo $iface
+    echo "$iface"
     set_iaid_mapping "$iaid" "$iface"
     return
   done
@@ -150,7 +150,7 @@ update_dnsmasq() {
   for tface in $INT_IFACE $OTHER_IFACES; do
     interfaces="${interfaces}interface=${tface}\n"
 
-    int_prefix="$(get_prefix $tface)"
+    int_prefix="$(get_prefix "$tface")"
     int_dhcp_range="$(echo "$int_prefix" | cut -d '/' -f 1)"
 
     prefixes="${prefixes}dhcp-range=${int_dhcp_range}, ra-stateless, ra-names\n"
@@ -175,7 +175,7 @@ update_radvd() {
   tmpfile="/tmp/radvd.conf.$$"
   rm -f "$tmpfile"
   for tface in $INT_IFACE $OTHER_IFACES; do
-    tprefix=$(get_prefix $tface)
+    tprefix=$(get_prefix "$tface")
     if [ -z "$tprefix" ]; then
       continue
     fi
@@ -232,6 +232,8 @@ split_net_and_setup_v6() {
   # Since we don't have bash, we can't use arrays, so put all the nets
   # into positional parameters ($1, $2, etc.), and shift as we go...
   #
+  # INTETINALLY not quoting interface variables below, we want splitting
+  # shellcheck disable=SC2086
   num_nets=$(echo $INT_IFACE $OTHER_IFACES | wc -w)
   # shellcheck disable=SC2046
   set -- $(split_prefix "$new_ip6_prefix" "$num_nets")
@@ -248,7 +250,7 @@ split_net_and_setup_v6() {
 device_addresses() {
   local device="$1"
 
-  ip -6 addr show scope global dev $device | awk '/inet6/ {print $2}'
+  ip -6 addr show scope global dev "$device" | awk '/inet6/ {print $2}'
 }
 
 ensure_net() {
@@ -260,18 +262,18 @@ ensure_net() {
   local needs_address
 
   ip=$(prefix_to_ip "$net")
-  addresses=$(device_addresses $iface)
+  addresses=$(device_addresses "$iface")
   needs_address=1
   for taddress in $addresses; do
     if [ "$taddress" = "$ip" ]; then
       needs_address=0
       continue
     fi
-    ip -6 addr del $taddress dev $iface
+    ip -6 addr del "$taddress" dev "$iface"
   done
 
   if [ "$needs_address" -eq 1 ]; then
-    ip -6 addr add $ip dev $iface
+    ip -6 addr add "$ip" dev "$iface"
   fi
 }
 
