@@ -56,6 +56,7 @@ EXT_IFACE='eth0'
 INT_IFACE='eth1'
 OTHER_IFACES=''
 SEPARATE_NETS=0
+PREFIX_LEN_HINT=''
 REQUEST_ADDRESS=1
 DHCP_CLIENT='dhclient'
 # shellcheck disable=SC2153
@@ -80,6 +81,20 @@ fi
 
 logger -t 99-ipv6 "Configuring $IFACE for v6..."
 
+# Smallest prefix length that has a /64 for each of our internal interfaces,
+# e.g. 1 -> 64, 2 -> 63, 3 or 4 -> 62
+prefix_len_for_nets() {
+  local nets="$1"
+  local len=64
+  local size=1
+
+  while [ "$size" -lt "$nets" ]; do
+    size=$((size * 2))
+    len=$((len - 1))
+  done
+  echo "$len"
+}
+
 if [ "$DHCP_CLIENT" = "dhcpcd" ]; then
   # If there's a stale dhcpcd, stop it
   /sbin/dhcpcd -6 -x "$IFACE" &>/dev/null
@@ -99,7 +114,12 @@ else
   fg_flag='-d'
 
   if [ "$SEPARATE_NETS" -eq 0 ]; then
-    cmd="$cmd -P --prefix-len-hint 60"
+    if [ -z "$PREFIX_LEN_HINT" ]; then
+      # shellcheck disable=SC2086
+      num_nets=$(echo $INT_IFACE $OTHER_IFACES | wc -w)
+      PREFIX_LEN_HINT=$(prefix_len_for_nets "$num_nets")
+    fi
+    cmd="$cmd -P --prefix-len-hint $PREFIX_LEN_HINT"
   else
     # We need to request one prefix per interface we care about, not including
     # the external one, of course.

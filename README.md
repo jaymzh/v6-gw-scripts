@@ -87,8 +87,8 @@ interface eth1
   ipv6rs
   # Optional: an address for the gateway itself
   ia_na 1
-  # Request a /60 and give a /64 from it to eth0 and eth2
-  ia_pd 2/::/60 eth0/0/64 eth2/1/64
+  # Request a /63 and give a /64 from it to eth0 and eth2
+  ia_pd 2/::/63 eth0/0/64 eth2/1/64
 ```
 
 Because of this, `SEPARATE_NETS` and `REQUEST_ADDRESS` don't apply when using
@@ -143,8 +143,12 @@ The scripts will replace `__INTERFACES__` and `__PREFIXES__` for you.
 With the ISC client, there are 2 ways to support multiple prefixes (with
 dhcpcd, use `ia_pd` in `dhcpcd.conf` instead):
 
-1. The default requests a single /60 and splits it up to give one /64 to each
-   interface you specify in your config.
+1. The default requests a single prefix just big enough to give one /64 to
+   each interface you specify in your config (a /64 for 1 interface, a /63
+   for 2, a /62 for 3 or 4, and so on), and splits it up between them. Set
+   `PREFIX_LEN_HINT` to ask for a specific size instead, e.g. `60`. This is
+   only a hint: your ISP may give you something bigger or smaller, and if
+   it's too small, the interfaces that don't fit won't get a prefix.
 2. If you set `SEPARATE_NETS=1` in your config, we will request a /64 for each
    interface directly from your ISP, assign one to each interface, and cache
    which lease is which so we can persist that across renewals. The scripts
